@@ -230,9 +230,24 @@
             #online-join-btn, #online-leave-btn { width: 100%; margin-top: 5px; }
             .all-ai-label { font-size: 10px; padding: 4px 6px; }
 
-            .ui-name { font-size: 13px; } .ui-money { font-size: 12px; } .ui-status { font-size: 10px; }
-            .ui-monopoly { font-size: 10px; padding: 2px; } .ui-lands { font-size: 9px; } .ui-cards { font-size: 10px; }
-            .player-ui { padding: 6px; border-width: 2px; min-height: 140px; }
+            /* 게임 화면 하단 UI 최적화 */
+            .ui-name { font-size: 13px; margin-bottom: 4px; }
+            .ui-money { font-size: 11px; margin-bottom: 3px; }
+            .ui-status { font-size: 9px; min-height: 12px; }
+            .ui-monopoly { font-size: 9px; padding: 2px; margin-bottom: 3px; }
+            .ui-lands { font-size: 8px; max-height: 50px; }
+            .ui-cards { font-size: 9px; padding: 3px; }
+            .player-ui { padding: 6px; border-width: 2px; min-height: 120px; }
+            .inventory-container { gap: 2px; padding: 2px; }
+            .inv-slot { height: 24px; font-size: 9px; }
+
+            /* 중앙 컨트롤러 최적화 */
+            #control-center { width: 280px; padding: 10px; gap: 8px; }
+            .dice { width: 45px; height: 45px; font-size: 28px; line-height: 45px; }
+            #status-msg { font-size: 12px; min-height: 40px; }
+            #status-msg b { font-size: 16px !important; }
+            #quick-inv-area { min-width: 60px; padding-left: 10px; }
+            .quick-slot { width: 55px; height: 28px; font-size: 9px; }
         }
 
         .cell { 
