@@ -231,8 +231,8 @@
             .all-ai-label { font-size: 10px; padding: 4px 6px; }
 
             /* 게임 화면 하단 UI 최적화 */
-            .ui-name { font-size: 13px; margin-bottom: 4px; }
-            .ui-money { font-size: 11px; margin-bottom: 3px; }
+            .ui-name { font-size: 13px; margin-bottom: 4px; letter-spacing: -0.5px; }
+            .ui-money { font-size: 11px; margin-bottom: 3px; letter-spacing: -0.5px; }
             .ui-status { font-size: 9px; min-height: 12px; }
             .ui-monopoly { font-size: 9px; padding: 2px; margin-bottom: 3px; }
             .ui-lands { font-size: 8px; max-height: 50px; }
@@ -1310,6 +1310,7 @@
                         // 내 정보 보호
                         const localMoney = players[pIdx].money;
                         const localInv = players[pIdx].inventory;
+                        const localTempIcon = players[pIdx].tempStatusIcon; // [V6.4] 내 아이콘 상태 보호
 
                         Object.assign(players[pIdx], pData);
 
@@ -1318,6 +1319,7 @@
 
                         if (Number(currentTurn) === Number(myPlayerId)) {
                             players[pIdx].money = localMoney;
+                            players[pIdx].tempStatusIcon = localTempIcon; // 내 턴일 땐 내가 지운 상태 유지
                         } else {
                             players[pIdx].money = Number(pData.money);
                         }
@@ -1456,7 +1458,10 @@
         const isActivePlayer = (Number(currentTurn) === Number(myPlayerId));
         const isAuthorizedHost = (isHost && players[currentTurn] && players[currentTurn].isAI);
         const isFinishingTurn = (extraData.currentTurn !== undefined);
-        const hasAuthority = isActivePlayer || isAuthorizedHost || isFinishingTurn;
+
+        // [V6.4] 본인의 파산 상태 등 긴급 상태 변화는 권한 없이도 전송 허용
+        const isEmergency = extraData.forceSync || false;
+        const hasAuthority = isActivePlayer || isAuthorizedHost || isFinishingTurn || isEmergency;
 
         const sanitizedPlayers = players.map(p => {
             if (!p) return null;
@@ -1467,6 +1472,7 @@
                 isWorldTravel: !!p.isWorldTravel, isBankrupt: !!p.isBankrupt, salaryBoost: !!p.salaryBoost, color: p.color,
                 diceControlCount: Number(p.diceControlCount), passCount: Number(p.passCount), turnNum: Number(p.turnNum),
                 skipNextTurn: !!p.skipNextTurn, salaryStolenBy: Number(p.salaryStolenBy || -1), bombTurns: Number(p.bombTurns || 0),
+                tempStatusIcon: p.tempStatusIcon || null, // [V6.4] undefined 방지 처리 추가
                 laborExpertLevel: Number(p.laborExpertLevel || 0), // [V5.0.8.1] 숙련도 동기화
                 moveBackNextTurn: !!p.moveBackNextTurn, appliedMoveTime: Number(p.appliedMoveTime || 0), isAnimating: !!p.isAnimating,
                 moveSteps: Number(p.moveSteps || 0), ignoreMoveEvents: !!p.ignoreMoveEvents
@@ -2637,10 +2643,9 @@
                         for(let i=0; i<3; i++) {
                             const item = p.inventory ? p.inventory[i] : null;
                             if (item) {
-                                const defClass = item.type === 'def' ? 'defense' : '';
-                                // 이미 카드를 썼거나 더블 상태라면 클릭 비활성화. 또한 방어형(def) 카드도 클릭 잠금
+                                // [V6.4] 색상으로 카드 종류 유추 방지를 위해 defense 클래스 제거
                                 const canUseNow = !p.hasUsedCardThisTurn && p.doubleCount === 0 && item.type !== 'def';
-                                qHtml += `<div class="quick-slot filled ${defClass}" ${canUseNow ? `onclick="useInventoryCard(${index}, ${i})"` : 'style="opacity:0.5; cursor:default;"'}>${item.short}</div>`;
+                                qHtml += `<div class="quick-slot filled" ${canUseNow ? `onclick="useInventoryCard(${index}, ${i})"` : 'style="opacity:0.5; cursor:default;"'}>${item.short}</div>`;
                             } else {
                                 qHtml += `<div class="quick-slot">Empty</div>`;
                             }
@@ -2919,8 +2924,13 @@
                 if(creditorId !== null && creditorId !== -1) players[creditorId].money += player.money; 
                 player.money = 0; player.isBankrupt = true; 
                 let pPiece = document.getElementById('p-' + player.id); if(pPiece) pPiece.style.display = 'none'; 
-                if(isOnline) pushOnlineState(); // 파산 상태 즉시 전송
-                onSuccess(false); return;
+
+                if(isOnline) pushOnlineState({ forceSync: true }); // 파산은 즉시 강제 전송
+
+                onSuccess(false);
+                // 파산 즉시 게임 종료 여부 체크 (턴 안 넘기고 바로 끝내기 위함)
+                setTimeout(() => { if(isOnline) pushOnlineState({ forceSync: true }); endTurnLogic(false); }, 500);
+                return;
             }
         }
 
@@ -4588,6 +4598,40 @@
             drawAngelGiftCard(player, isDouble);
         }
         else if (tileName === "국세청") {
+            if (buildRule === 'fortune') {
+                // [V6.3] 포츈 모드 전용: 부의 재분배 (로빈후드 시스템)
+                let taxRate = 0.15; // 현재 자산의 15%
+                let taxAmount = Math.floor((player.money * taxRate) / 10000) * 10000;
+                if (taxAmount < 100000) taxAmount = 100000; // 최소 10만 원
+
+                let others = players.filter(p => !p.isBankrupt && p.id !== player.id);
+                let poorest = others.length > 0 ? others.sort((a, b) => a.money - b.money)[0] : null;
+
+                let applyTax = () => {
+                    handleBankruptcy(player, taxAmount, -1, false, -1, null, (success) => {
+                        if (success) {
+                            if (poorest) {
+                                poorest.money += taxAmount;
+                                addLog(`⚖️ [부의 재분배] [${player.name}]의 세금 ${(taxAmount/10000).toLocaleString()}만 원 → [${poorest.name}]에게 지원!`);
+                            } else {
+                                addLog(`🏢 [국세청] [${player.name}]님이 세금 ${(taxAmount/10000).toLocaleString()}만 원을 납부했습니다.`);
+                            }
+                            updatePlayerUI();
+                            if(isOnline) pushOnlineState();
+                        }
+                        setTimeout(() => endTurnLogic(isDouble), 800);
+                    });
+                };
+
+                if (player.isAI) {
+                    setTimeout(applyTax, getRandomDelay());
+                } else {
+                    let desc = `<div style="text-align:left; font-size:14px;">현재 자산의 <b>15%</b>가 세금으로 징수되어<br>가장 어려운 플레이어에게 전달됩니다.<br><br>• 납부 세금: <b style="color:#d32f2f;">${(taxAmount/10000).toLocaleString()}만 원</b>${poorest ? `<br>• 지원 대상: <b>${poorest.name}</b>` : ""}</div>`;
+                    openCustomModal("⚖️ 부의 재분배 (국세청)", "공정한 사회를 위한 세금 징수", desc, false, "세금 납부하기", "", applyTax);
+                }
+                return;
+            }
+            // 일반 모드 로직 (기존 유지)
             if(player.isAI) { handleBankruptcy(player, 200000, -1, false, -1, null, (success) => { if(success) { addLog(`🤖[${player.name}] 세금 20만 원 납부`); updatePlayerUI(); } setTimeout(() => endTurnLogic(isDouble), getRandomDelay()); }); return; }
             openCustomModal("🏢 국세청 도착", "세금 납부", `<div style="font-size:14px; margin-top:10px;">세금 <b>20만 원</b>을 납부해야 합니다.</div>`, false, "납부하기", "", () => { handleBankruptcy(player, 200000, -1, false, -1, null, (success) => { if(success) { addLog(`[${player.name}] 세금 20만 원 납부`); updatePlayerUI(); } endTurnLogic(isDouble); }); }); 
         }
@@ -4905,54 +4949,42 @@
 
         let shouldEnd = forceEnd || alive.length <= 1 || (isTeamGame && activeTeams.size <= 1) || (Number(currentTurn) === lastActiveIdx && Number(currentRound) >= Number(maxRounds));
 
-        if (!isDouble || forceEnd || players[currentTurn].isBankrupt) {
-            players[currentTurn].doubleCount = 0; 
-            boardState.forEach((b, idx) => { 
-                if(b.isDusted && b.dustAttackerId === currentTurn) { 
-                    b.dustRemainingTurns--; 
-                    if(b.dustRemainingTurns <= 0) { b.isDusted = false; b.dustAttackerId = -1; addLog(`${mapData[idx]} 황사 효과 소멸`); } 
-                } 
-                if(b.blackoutTurns > 0) {
-                    b.blackoutTurns--;
-                    if(b.blackoutTurns <= 0) addLog(`${mapData[idx]} 도시정전 효과 소멸`);
-                }
+        if (shouldEnd) {
+            let endReason = (currentTurn === lastActiveIdx && currentRound >= maxRounds) ? "⏳ 턴 횟수 종료" : "💥 파산으로 인한 종료";
+            let rankings = players.map(p => {
+                if (p.isBankrupt) return { id: p.id, team: p.team, name: p.name, total: 0, isBankrupt: true, color: p.color };
+                let propertyValue = 0; boardState.forEach((b, i) => { if (b.owner === p.id) propertyValue += getCost(i); });
+                return { id: p.id, team: p.team, name: p.name, total: p.money + propertyValue, isBankrupt: false, color: p.color };
             });
-            updateBoardVisuals();
 
-            if (shouldEnd) {
-                let endReason = (currentTurn === lastActiveIdx && currentRound >= maxRounds) ? "⏳ 턴 횟수 종료" : "💥 파산으로 인한 종료";
-                let rankings = players.map(p => {
-                    if (p.isBankrupt) return { id: p.id, team: p.team, name: p.name, total: 0, isBankrupt: true, color: p.color };
-                    let propertyValue = 0; boardState.forEach((b, i) => { if (b.owner === p.id) propertyValue += getCost(i); }); 
-                    return { id: p.id, team: p.team, name: p.name, total: p.money + propertyValue, isBankrupt: false, color: p.color };
-                });
-                
-                let rankHtml = `<div style="font-size:14px; font-weight:bold; color:#d32f2f; margin-bottom:10px;">[ ${endReason} ]</div>`;
-                if (isTeamGame) {
-                    let t1 = rankings.filter(r => r.team === 1); let t2 = rankings.filter(r => r.team === 2);
-                    let tRank = [
-                        { team: "팀 A", names: t1.map(r=>r.name).join(', '), total: t1.reduce((sum, r)=>sum+r.total, 0), color: '#ff5252' },
-                        { team: "팀 B", names: t2.map(r=>r.name).join(', '), total: t2.reduce((sum, r)=>sum+r.total, 0), color: '#448aff' }
-                    ];
-                    tRank.sort((a, b) => b.total - a.total);
-                    rankHtml += tRank.map((r, i) => `<div style="padding:10px; border-bottom:1px solid #eee; background:${i === 0 ? '#fff9c4' : 'transparent'};">${(i === 0) ? '🏆 <b>최종 우승</b>' : '🥈 <b>준우승</b>'} <span style="color:${r.color}">[${r.team}]</span> (${r.names})<br>합산 자산: <b>${(r.total/10000).toLocaleString()}만 원</b></div>`).join('');
-                } else {
-                    rankings.sort((a, b) => b.total - a.total);
-                    rankHtml += rankings.map((r, i) => `<div style="padding:10px; border-bottom:1px solid #eee; background:${i === 0 ? '#fff9c4' : 'transparent'};">${(i === 0) ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '🎖️'))} <b style="color:${r.color}">${r.name}</b>: <b>${(r.total/10000).toLocaleString()}만 원</b>${r.isBankrupt ? ' (파산)' : ''}</div>`).join('');
-                }
-
-                if (isOnline) {
-                    database.ref('rooms/' + onlineRoomId).update({
-                        gameEnded: true,
-                        endRankHtml: rankHtml,
-                        lastActionTime: Date.now()
-                    });
-                }
-                
-                openCustomModal(`🎉 게임 종료`, "최종 자산 결과입니다.", rankHtml, false, "다시 하기", "", () => { resetGameForEnd(); });
-                document.getElementById('action-btn').disabled = true; return;
+            let rankHtml = `<div style="font-size:14px; font-weight:bold; color:#d32f2f; margin-bottom:10px;">[ ${endReason} ]</div>`;
+            if (isTeamGame) {
+                let t1 = rankings.filter(r => r.team === 1); let t2 = rankings.filter(r => r.team === 2);
+                let tRank = [
+                    { team: "팀 A", names: t1.map(r=>r.name).join(', '), total: t1.reduce((sum, r)=>sum+r.total, 0), color: '#ff5252' },
+                    { team: "팀 B", names: t2.map(r=>r.name).join(', '), total: t2.reduce((sum, r)=>sum+r.total, 0), color: '#448aff' }
+                ];
+                tRank.sort((a, b) => b.total - a.total);
+                rankHtml += tRank.map((r, i) => `<div style="padding:10px; border-bottom:1px solid #eee; background:${i === 0 ? '#fff9c4' : 'transparent'};">${(i === 0) ? '🏆 <b>최종 우승</b>' : '🥈 <b>준우승</b>'} <span style="color:${r.color}">[${r.team}]</span> (${r.names})<br>합산 자산: <b>${(r.total/10000).toLocaleString()}만 원</b></div>`).join('');
+            } else {
+                rankings.sort((a, b) => b.total - a.total);
+                rankHtml += rankings.map((r, i) => `<div style="padding:10px; border-bottom:1px solid #eee; background:${i === 0 ? '#fff9c4' : 'transparent'};">${(i === 0) ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '🎖️'))} <b style="color:${r.color}">${r.name}</b>: <b>${(r.total/10000).toLocaleString()}만 원</b>${r.isBankrupt ? ' (파산)' : ''}</div>`).join('');
             }
-            
+
+            if (isOnline) {
+                database.ref('rooms/' + onlineRoomId).update({
+                    gameEnded: true,
+                    endRankHtml: rankHtml,
+                    lastActionTime: Date.now()
+                });
+            }
+
+            openCustomModal(`🎉 게임 종료`, "최종 자산 결과입니다.", rankHtml, false, "다시 하기", "", () => { resetGameForEnd(); });
+            document.getElementById('action-btn').disabled = true; return;
+        }
+
+        if (!isDouble || forceEnd || players[currentTurn].isBankrupt) {
+
             let loopSafe = 0; 
             let roundIncreased = false;
             do {
@@ -5203,9 +5235,10 @@
 
     function applyRandomNames() {
         const primaryNames = [
-            "흔한남매", "허팝", "도티", "잠뜰", "민쩌미",
-            "파뿌리", "에그박사", "급식왕", "슈뻘맨", "밍꼬발랄",
-            "떡볶이빌런", "베라대장", "잼민이왕", "무지성돌격", "게임마스터"
+            "무적잼민이", "떡볶이빌런", "마라탕귀신", "제로투장인", "허팝연구원",
+            "잠뜰팬클럽", "전설의용사", "급식탈출", "탕후루맛집", "알까기천재",
+            "게임의신", "무지성돌격", "초코우유한잔", "피카츄돈까스", "학교가기싫어",
+            "킹갓제너럴", "배라대장", "급식왕자", "우주최강이", "말랑말랑푸딩"
         ];
         const cookieNames = [
             "얄미운쿠키", "성난쿠키", "졸린쿠키", "배고픈쿠키", "똑똑한쿠키",
