@@ -91,19 +91,41 @@
             display: flex; justify-content: space-between; width: 100%; max-width: 730px; 
             margin-bottom: 15px; padding: 0 5px; box-sizing: border-box; 
         }
-        #bgm-btn, #reset-btn { 
-            background: #9e9e9e; color: white; padding: 8px 15px; font-size: 13px; 
-            font-weight: bold; border: none; border-radius: 5px; cursor: pointer; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: 0.2s; 
+
+        .top-controls .btn-group { display: flex; gap: 6px; }
+
+        #help-btn, #fortune-help-btn, #update-btn, #reset-btn {
+            display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px;
+            font-size: 13px; font-weight: bold; border: none; border-radius: 10px;
+            cursor: pointer; transition: 0.2s; color: white;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.15);
         }
+        #help-btn:hover, #fortune-help-btn:hover, #update-btn:hover, #reset-btn:hover {
+            transform: translateY(-2px); box-shadow: 0 5px 12px rgba(0,0,0,0.2); filter: brightness(1.1);
+        }
+        #help-btn:active, #fortune-help-btn:active, #update-btn:active, #reset-btn:active { transform: translateY(0); }
+
+        #help-btn { background: #0288d1; }
+        #fortune-help-btn { background: #8e24aa; }
+        #update-btn { background: #607d8b; }
         #reset-btn { background: #ff7043; }
+
         .volume-controls {
-            display: flex; flex-direction: column; gap: 5px; background: rgba(255,255,255,0.8);
-            padding: 8px; border-radius: 8px; border: 1px solid #ddd; min-width: 140px;
+            display: flex; flex-direction: column; gap: 8px; background: white;
+            padding: 10px 15px; border-radius: 12px; border: 1px solid #eee;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-width: 100px; /* 기존 150px에서 대폭 축소 */
         }
-        .vol-group { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: bold; color: #555; }
-        .vol-group input[type="range"] { flex: 1; cursor: pointer; height: 4px; }
-        #bgm-btn:hover, #reset-btn:hover { filter: brightness(0.9); }
+        .vol-group { display: flex; align-items: center; gap: 10px; font-size: 11px; font-weight: 800; color: #666; }
+
+        .vol-group input[type="range"] {
+            flex: 1; cursor: pointer; height: 5px; -webkit-appearance: none;
+            background: #e0e0e0; border-radius: 5px; outline: none;
+        }
+        .vol-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 14px; height: 14px;
+            background: #00838f; border-radius: 50%; cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3); border: 2px solid white;
+        }
 
         #main-content { display: flex; flex-direction: column; gap: 20px; align-items: center; width: 100%; }
 
@@ -794,7 +816,7 @@
 
     <div id="setup">
         <h2 style="display: flex; align-items: center; justify-content: center; gap: 10px; color:#00838f; margin-top: 0;">
-            <img src="title.png" alt="icon" style="height: 40px; width: auto;" onerror="this.style.display='none'"> 우리의 마블
+            <img src="title.png" alt="icon" style="height: 40px; width: auto;"> 우리의 마블
         </h2>
         
         <!-- 섹션 1: 게임 설정 -->
@@ -899,19 +921,19 @@
 
     <div id="game-container">
         <div class="top-controls">
-            <div>
-                <button id="help-btn" onclick="showHelp()" style="background:#0288d1; color:white; padding:8px 15px; font-size:13px; font-weight:bold; border:none; border-radius:5px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2);">📖 게임</button>
-                <button id="fortune-help-btn" onclick="showFortuneHelp()" style="background:#8e24aa; color:white; padding:8px 15px; font-size:13px; font-weight:bold; border:none; border-radius:5px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2); margin-left: 5px;">🃏 포츈</button>
-                <button id="update-btn" onclick="showUpdateNotes()" style="background:#607d8b; color:white; padding:8px 15px; font-size:13px; font-weight:bold; border:none; border-radius:5px; cursor:pointer; box-shadow:0 2px 5px rgba(0,0,0,0.2); margin-left: 5px;">📢 소식</button>
+            <div class="btn-group">
+                <button id="help-btn" onclick="showHelp()">📖 게임</button>
+                <button id="fortune-help-btn" onclick="showFortuneHelp()">🃏 포츈</button>
+                <button id="update-btn" onclick="showUpdateNotes()">📢 소식</button>
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
                 <div class="volume-controls">
                     <div class="vol-group">
-                        <span>🎵 BGM</span>
+                        <label for="bgm-vol">🎵 BGM</label>
                         <input type="range" id="bgm-vol" min="0" max="100" value="50" oninput="updateVolume('bgm')">
                     </div>
                     <div class="vol-group">
-                        <span>🎲 효과음</span>
+                        <label for="sfx-vol">🎲 효과음</label>
                         <input type="range" id="sfx-vol" min="0" max="100" value="70" oninput="updateVolume('sfx')">
                     </div>
                 </div>
@@ -1307,28 +1329,35 @@
                     const localAppliedTime = players[pIdx].appliedMoveTime || 0;
 
                     if (pIdx === Number(myPlayerId)) {
-                        // 내 정보 보호
+                        // 내 정보 보호 (V6.6 로직 강화)
                         const localMoney = players[pIdx].money;
                         const localInv = players[pIdx].inventory;
-                        const localTempIcon = players[pIdx].tempStatusIcon; // [V6.4] 내 아이콘 상태 보호
+                        const localTempIcon = players[pIdx].tempStatusIcon;
 
                         Object.assign(players[pIdx], pData);
+
+                        // 서버 데이터에 없더라도 명시적으로 동기화해야 하는 필드들
+                        players[pIdx].tempStatusIcon = pData.tempStatusIcon || null;
+                        players[pIdx].salaryStolenBy = pData.salaryStolenBy !== undefined ? pData.salaryStolenBy : -1;
 
                         // 나는 내 화면에서 무조건 사람(AI 아님)
                         players[pIdx].isAI = false;
 
                         if (Number(currentTurn) === Number(myPlayerId)) {
+                            // 내 턴일 때는 내가 로컬에서 지운 상태(아이콘 등)를 최우선 보호
                             players[pIdx].money = localMoney;
-                            players[pIdx].tempStatusIcon = localTempIcon; // 내 턴일 땐 내가 지운 상태 유지
+                            players[pIdx].tempStatusIcon = localTempIcon;
                         } else {
                             players[pIdx].money = Number(pData.money);
                         }
                         players[pIdx].inventory = localInv;
                     } else {
                         Object.assign(players[pIdx], pData);
-                        // [V5.8] 원격 플레이어 인벤토리 강제 동기화 (빈 배열 처리)
+                        // 원격 플레이어 정보는 서버 데이터를 100% 신뢰
                         players[pIdx].inventory = pData.inventory || [];
                         players[pIdx].isAI = !!pData.isAI;
+                        players[pIdx].tempStatusIcon = pData.tempStatusIcon || null;
+                        players[pIdx].salaryStolenBy = pData.salaryStolenBy !== undefined ? pData.salaryStolenBy : -1;
                     }
 
                     players[pIdx].appliedMoveTime = localAppliedTime;
@@ -2270,6 +2299,7 @@
                     money: initialMoney,
                     inventory: [], // [V5.0] 통합 인벤토리 (최대 3개)
                     hasUsedCardThisTurn: false, // [V5.0.6.0] 1턴 1회 사용 제한
+                    tempStatusIcon: null, // [V6.6] 초기화 추가
                     inIsland: false, islandTurns: 0, usedEscapeCard: false,
                     doubleCount: 0, isWorldTravel: false, isBankrupt: false, salaryBoost: false,
                     color: playerColors[originalIdx - 1],
@@ -2614,10 +2644,10 @@
                 if(item) {
                     const isMe = (index === myPlayerId) || !isOnline;
                     const displayName = isMe ? item.short : "❓카드";
-                    const defClass = item.type === 'def' ? 'defense' : '';
+                    // [V6.5] 심리전을 위해 사이드바에서 defense 클래스(초록색) 제거
                     // 내 가방이고 내 차례일 때만 클릭 가능하도록 함
                     const canClick = isMe && (currentTurn === index) && !isMoving;
-                    invHtml += `<div class="inv-slot filled ${defClass}" ${canClick ? `onclick="useInventoryCard(${index}, ${i})"` : ""}>${displayName}</div>`;
+                    invHtml += `<div class="inv-slot filled" ${canClick ? `onclick="useInventoryCard(${index}, ${i})"` : ""}>${displayName}</div>`;
                 } else {
                     invHtml += `<div class="inv-slot">Empty</div>`;
                 }
@@ -2643,7 +2673,7 @@
                         for(let i=0; i<3; i++) {
                             const item = p.inventory ? p.inventory[i] : null;
                             if (item) {
-                                // [V6.4] 색상으로 카드 종류 유추 방지를 위해 defense 클래스 제거
+                                // [V6.5] 퀵슬롯에서도 색상으로 유추 방지
                                 const canUseNow = !p.hasUsedCardThisTurn && p.doubleCount === 0 && item.type !== 'def';
                                 qHtml += `<div class="quick-slot filled" ${canUseNow ? `onclick="useInventoryCard(${index}, ${i})"` : 'style="opacity:0.5; cursor:default;"'}>${item.short}</div>`;
                             } else {
@@ -3150,7 +3180,7 @@
             {id: 26, name: "한번더! (주사위를 한번 더 던질 기회 획득)", short: "한번더!", type: "use"},
             {id: 31, name: "너와나 (지정한 상대와 위치를 서로 바꿈)", short: "위치교환", type: "use"},
             {id: 34, name: "신의 주사위 (원하는 이동 수치를 직접 선택)", short: "신의주사위", type: "use"},
-            {id: 35, name: "뒤로가! (방금 온 주사위 수만큼 뒤로 이동)", short: "뒤로가", type: "use"}
+            {id: 35, name: "뒤로가! (다음 이동 시 주사위 수만큼 역방향 이동 - 거미줄 작동)", short: "뒤로가", type: "use"}
         ];
 
         if (buildRule === 'fortune') {
@@ -3234,7 +3264,7 @@
             window.handleCardChoice = (choice) => {
                 document.getElementById('game-modal').style.display = 'none';
                 if (choice === 'store') addToInventory(player, card, isDouble);
-                else { addLog(`[${player.name}] [${card.short}] 카드를 버렸습니다.`); endTurnLogic(isDouble); }
+                else { addLog(`[${player.name}] 보관용 카드를 버렸습니다.`); endTurnLogic(isDouble); }
             };
             openCustomModal(title, alreadyHas ? "이미 가방에 동일한 카드가 있습니다!" : "어떤 선택을 하시겠습니까?", html, false, "", "", () => {});
             document.getElementById('modal-confirm').style.display = 'none';
